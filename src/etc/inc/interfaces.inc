@@ -3124,41 +3124,45 @@ function interface_dhcpv6_configure($interface = 'wan', $wancfg)
         }
     }
 
-    /* for SLAAC interfaces we do fire off a dhcp6 client for just our name servers */
     if ($wancfg['ipaddrv6'] == "slaac") {
+        /* for SLAAC interfaces we do fire off a dhcp6 client for just our name servers */
         $dhcp6cconf .= "  information-only;\n";
         $dhcp6cconf .= "  request domain-name-servers;\n";
         $dhcp6cconf .= "  request domain-name;\n";
         $dhcp6cconf .= "  script \"/var/etc/dhcp6c_{$interface}_script.sh\"; # we'd like some nameservers please\n";
         $dhcp6cconf .= "};\n";
     } else {
-        /* skip address request if this is set */
-        if (!isset($wancfg['dhcp6prefixonly'])) {
-            $dhcp6cconf .= "  send ia-na 0; # request stateful address\n";
-        }
-        if (is_numeric($wancfg['dhcp6-ia-pd-len'])) {
-            $dhcp6cconf .= "  send ia-pd 0; # request prefix delegation\n";
+        $iflist = link_interface_to_track6($interface);
+
+        $count = 0;
+        foreach ($iflist as $friendly => $ifcfg) {
+            /* skip address request if this is set */
+            if (!isset($wancfg['dhcp6prefixonly'])) {
+              $dhcp6cconf .= "  send ia-na {$count}; # request stateful address for $friendly\n";
+            }
+            if (is_numeric($wancfg['dhcp6-ia-pd-len'])) {
+              $dhcp6cconf .= "  send ia-pd {$count}; # request prefix delegation for $friendly\n";
+            }
+            $count += 1;
         }
 
         $dhcp6cconf .= "  request domain-name-servers;\n";
         $dhcp6cconf .= "  request domain-name;\n";
         $dhcp6cconf .= "  script \"/var/etc/dhcp6c_{$interface}_script.sh\"; # we'd like some nameservers please\n";
-
         $dhcp6cconf .= "};\n";
 
-        if (!isset($wancfg['dhcp6prefixonly'])) {
-            $dhcp6cconf .= "id-assoc na 0 { };\n";
-        }
-
-        if (is_numeric($wancfg['dhcp6-ia-pd-len'])) {
-            /* Setup the prefix delegation */
-            $dhcp6cconf .= "id-assoc pd 0 {\n";
-            $preflen = 64 - $wancfg['dhcp6-ia-pd-len'];
-            if (isset($wancfg['dhcp6-ia-pd-send-hint'])) {
-                $dhcp6cconf .= "  prefix ::/{$preflen} infinity;\n";
+        $count = 0;
+        foreach ($iflist as $friendly => $ifcfg) {
+            if (!isset($wancfg['dhcp6prefixonly'])) {
+                $dhcp6cconf .= "id-assoc na {$count} { };\n";
             }
-            $iflist = link_interface_to_track6($interface);
-            foreach ($iflist as $friendly => $ifcfg) {
+            if (is_numeric($wancfg['dhcp6-ia-pd-len'])) {
+                /* Setup the prefix delegation */
+                $dhcp6cconf .= "id-assoc pd {$count} { # more prefix delegation for $friendly\n";
+                $preflen = 64 - $wancfg['dhcp6-ia-pd-len'];
+                if (isset($wancfg['dhcp6-ia-pd-send-hint'])) {
+                    $dhcp6cconf .= "  prefix ::/{$preflen} infinity;\n";
+                }
                 if (is_numeric($ifcfg['track6-prefix-id'])) {
                     $realif = get_real_interface($friendly);
                     $dhcp6cconf .= "  prefix-interface {$realif} {\n";
@@ -3166,9 +3170,9 @@ function interface_dhcpv6_configure($interface = 'wan', $wancfg)
                     $dhcp6cconf .= "    sla-len {$wancfg['dhcp6-ia-pd-len']};\n";
                     $dhcp6cconf .= "  };\n";
                 }
+                $dhcp6cconf .= "};\n";
             }
-            unset($preflen, $iflist, $ifcfg);
-            $dhcp6cconf .= "};\n";
+            $count += 1;
         }
     }
 
